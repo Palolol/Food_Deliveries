@@ -1,0 +1,119 @@
+{
+  "project_info": {
+    "project_number": "1013469356707",
+    "firebase_url": "https://message-ef159-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "message-ef159",
+    "storage_bucket": "message-ef159.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1013469356707:android:da1a8b163941c558cc5516",
+        "android_client_info": {
+          "package_name": "com.example.food_delievery"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgwj9ExjPc4mgEXTYlPLj4dhpveP6MV1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1013469356707-md30enp1ojhckidss9ekge7dpqp95ap1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foodDelievery"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1013469356707:android:ed1dfbdbaeaa6706cc5516",
+        "android_client_info": {
+          "package_name": "com.example.food_delivery"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgwj9ExjPc4mgEXTYlPLj4dhpveP6MV1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1013469356707-md30enp1ojhckidss9ekge7dpqp95ap1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foodDelievery"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1013469356707:android:1114898daa8274ebcc5516",
+        "android_client_info": {
+          "package_name": "com.palolol.foodD"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAgwj9ExjPc4mgEXTYlPLj4dhpveP6MV1k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1013469356707-97b87grvqfnai5licst1ro1volv7taog.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1013469356707-md30enp1ojhckidss9ekge7dpqp95ap1.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.foodDelievery"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

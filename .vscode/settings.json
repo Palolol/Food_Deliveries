@@ -1,0 +1,5 @@
+{
+    "java.compile.nullAnalysis.mode": "automatic",
+    "cmake.sourceDirectory": "D:/GITHUB/food_delivery/windows",
+    "java.configuration.updateBuildConfiguration": "interactive",
+}
