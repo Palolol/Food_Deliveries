@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../models/restaurant_model.dart';
 import '../models/menu_item_model.dart';
 import '../services/api_service.dart';
-import 'activity_screen.dart';
+
 
 class RestaurantDetailScreen extends StatefulWidget {
   final RestaurantModel restaurant;
@@ -129,7 +129,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                  colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
                 ),
               ),
             ),
@@ -590,7 +590,7 @@ class _RestaurantDetailScreenState extends State<RestaurantDetailScreen> {
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.green.withOpacity(0.3),
+                color: Colors.green.withValues(alpha: 0.3),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
               ),

@@ -155,7 +155,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Container(
                 width: 130,
                 height: 130,
-                color: Colors.white.withOpacity(0.1),
+                color: Colors.white.withValues(alpha: 0.1),
                 child: const Icon(
                   Icons.fastfood,
                   size: 80,
@@ -200,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   'Valid for all premium restaurants until Sunday.',
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withValues(alpha: 0.8),
                     fontSize: 12,
                   ),
                 ),
@@ -318,7 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
           color: Colors.white,
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
+              color: Colors.grey.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -350,7 +350,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               end: Alignment.bottomCenter,
                               colors: [
                                 Colors.transparent,
-                                Colors.black.withOpacity(0.6),
+                                Colors.black.withValues(alpha: 0.6),
                               ],
                             ),
                           ),

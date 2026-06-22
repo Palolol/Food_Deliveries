@@ -1,5 +1,7 @@
 import 'dart:convert';
-// import 'package:http/http.dart' as http; // TODO: Uncomment when connecting to backend
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_model.dart';
 import '../models/restaurant_model.dart';
@@ -20,23 +22,128 @@ import '../models/category_model.dart';
 /// Replace mock data with actual HTTP calls when backend is ready.
 /// ============================================================
 
+/// Custom exception for API errors.
+class ApiException implements Exception {
+  final String message;
+  const ApiException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiService {
-  /// -------------------------------------------------------
-  /// TODO: [MySQL INTEGRATION] - Set your backend API base URL
-  /// Example: 'http://localhost:3000/api' or 'https://your-server.com/api'
-  /// -------------------------------------------------------
-  static const String baseUrl = 'http://localhost:3000/api';
+  // ── Singleton ──────────────────────────────────────────────────────────────
+  ApiService._();
+  static final ApiService instance = ApiService._();
 
-  /// -------------------------------------------------------
-  /// TODO: [MySQL INTEGRATION] - Add authentication token
-  /// Store and retrieve auth token from secure storage
-  /// -------------------------------------------------------
-  static String? _authToken;
+  // ── Backend URL (auto-detects sandbox vs Android emulator) ─────────────────
+  static String get baseUrl {
+    if (kIsWeb) {
+      final host = Uri.base.host;
+      final backendHost = host.replaceFirst('5060-', '8000-');
+      return 'https://$backendHost';
+    }
+    return 'http://10.0.2.2:8000'; // Android emulator → host machine
+  }
 
-  static Map<String, String> get _headers => {
+  // ── JWT token state ────────────────────────────────────────────────────────
+  String? _token;
+  int?    _userId;
+  String? _userName;
+  String? _userEmail;
+
+  bool    get isLoggedIn  => _token != null;
+  int?    get userId      => _userId;
+  String? get userName    => _userName;
+  String? get userEmail   => _userEmail;
+
+  static const _tokenKey     = 'auth_token';
+  static const _userIdKey    = 'user_id';
+  static const _userNameKey  = 'user_name';
+  static const _userEmailKey = 'user_email';
+
+  Future<void> loadToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    _token     = prefs.getString(_tokenKey);
+    _userId    = prefs.getInt(_userIdKey);
+    _userName  = prefs.getString(_userNameKey);
+    _userEmail = prefs.getString(_userEmailKey);
+  }
+
+  Future<void> _saveToken(Map<String, dynamic> data) async {
+    final prefs = await SharedPreferences.getInstance();
+    _token     = data['access_token'] as String?;
+    _userId    = data['user_id'] as int?;
+    _userName  = data['full_name'] as String?;
+    _userEmail = data['email'] as String?;
+    if (_token     != null) await prefs.setString(_tokenKey, _token!);
+    if (_userId    != null) await prefs.setInt(_userIdKey, _userId!);
+    if (_userName  != null) await prefs.setString(_userNameKey, _userName!);
+    if (_userEmail != null) await prefs.setString(_userEmailKey, _userEmail!);
+  }
+
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_tokenKey);
+    await prefs.remove(_userIdKey);
+    await prefs.remove(_userNameKey);
+    await prefs.remove(_userEmailKey);
+    _token = _userName = _userEmail = null;
+    _userId = null;
+  }
+
+  Map<String, String> get _headers => {
     'Content-Type': 'application/json',
-    if (_authToken != null) 'Authorization': 'Bearer $_authToken',
+    if (_token != null) 'Authorization': 'Bearer $_token',
   };
+
+  // ── Auth REST calls (to FastAPI backend, best-effort) ─────────────────────
+  Future<void> login({required String email, required String password}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/auth/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        await _saveToken(jsonDecode(res.body) as Map<String, dynamic>);
+      } else {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        throw ApiException(body['detail']?.toString() ?? 'Login failed');
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Backend unreachable: $e');
+    }
+  }
+
+  Future<void> register({
+    required String fullName,
+    required String email,
+    required String password,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$baseUrl/auth/register'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'full_name': fullName,
+          'email': email,
+          'password': password,
+        }),
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        await _saveToken(jsonDecode(res.body) as Map<String, dynamic>);
+      } else {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        throw ApiException(body['detail']?.toString() ?? 'Registration failed');
+      }
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException('Backend unreachable: $e');
+    }
+  }
 
   // ======================= USER API =======================
 
@@ -342,10 +449,41 @@ class ApiService {
   ///   INSERT INTO OrderItem (order_id, menu_item_id, quantity, price) VALUES (?, ?, ?, ?)
   ///   UPDATE OrderStatus SET ... (or insert status record)
   /// -------------------------------------------------------
-  static Future<OrderModel> createOrder(OrderModel order) async {
+  static Future<OrderModel> createOrderFromModel(OrderModel order) async {
     // TODO: Replace with actual API call
     await Future.delayed(const Duration(milliseconds: 500));
     return order;
+  }
+
+  /// Instance createOrder used by CheckoutScreen — calls FastAPI backend.
+  /// Falls back gracefully if backend is unreachable.
+  Future<Map<String, dynamic>> createOrder({
+    required int restaurantId,
+    required List<Map<String, dynamic>> items,
+    required String deliveryAddress,
+    required String paymentMethod,
+    String? specialNotes,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('${ApiService.baseUrl}/orders/'),
+        headers: _headers,
+        body: jsonEncode({
+          'restaurant_id': restaurantId,
+          'items': items,
+          'delivery_address': deliveryAddress,
+          'payment_method': paymentMethod,
+          if (specialNotes != null && specialNotes.isNotEmpty)
+            'special_notes': specialNotes,
+        }),
+      ).timeout(const Duration(seconds: 10));
+      if (res.statusCode == 200 || res.statusCode == 201) {
+        return jsonDecode(res.body) as Map<String, dynamic>;
+      }
+    } catch (_) {
+      // Backend unavailable — caller uses fallback order ID
+    }
+    throw ApiException('Order API unavailable');
   }
 
   /// -------------------------------------------------------
@@ -371,6 +509,38 @@ class ApiService {
   static Future<double> applyPromoCode(String code) async {
     await Future.delayed(const Duration(milliseconds: 300));
     return 0.0; // Return discount amount
+  }
+
+  // ── Instance methods used by screens ─────────────────────────────────────
+
+  /// Cancel an order (best-effort — screen proceeds even if API fails).
+  Future<void> cancelOrder(String orderId) async {
+    try {
+      await http.patch(
+        Uri.parse('${ApiService.baseUrl}/orders/$orderId/cancel'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Best-effort: local UI already reflects cancellation
+    }
+  }
+
+  /// Fetch reviews for a restaurant. Returns raw JSON maps; caller converts.
+  Future<List<Map<String, dynamic>>> getReviews(int restaurantId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('${ApiService.baseUrl}/reviews/restaurant/$restaurantId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 8));
+      if (res.statusCode == 200) {
+        return List<Map<String, dynamic>>.from(
+          jsonDecode(res.body) as List,
+        );
+      }
+    } catch (_) {
+      // Backend unavailable — caller falls back to sample data
+    }
+    return [];
   }
 
   // ======================= REVIEW API =======================

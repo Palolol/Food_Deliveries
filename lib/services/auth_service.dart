@@ -45,8 +45,8 @@ class AuthService {
 
   // ── Current user ───────────────────────────────────────────────────────────
   User? get currentUser => _auth.currentUser;
-  // កែតម្រូវៈ តម្រូវការ Firebase និង RestAPI ដើម្បីចូលទៅកាន់
-  bool get isLoggedIn => _auth.currentUser != null && _api.isLoggedIn;
+  // Firebase is the source of truth — API JWT is optional/supplementary
+  bool get isLoggedIn => _auth.currentUser != null;
 
   String? get userName => _auth.currentUser?.displayName ?? _api.userName;
   String? get userEmail => _auth.currentUser?.email ?? _api.userEmail;
@@ -65,14 +65,11 @@ class AuthService {
         password: password,
       );
 
-      // Also log in to FastAPI backend for JWT (required for REST calls)
+      // Also log in to FastAPI backend for JWT (best-effort, non-blocking)
       try {
         await _api.login(email: email.trim(), password: password);
-      } on ApiException catch (e) {
-        // Surface the real backend error so it's debuggable
-        throw AuthException('Backend login failed: ${e.message}');
-      } catch (e) {
-        throw AuthException('Backend unreachable: $e');
+      } catch (_) {
+        // Backend unavailable — Firebase auth still valid
       }
 
       return cred;
@@ -102,25 +99,15 @@ class AuthService {
       await cred.user?.updateDisplayName(fullName.trim());
       await cred.user?.reload();
 
-      // Also register in FastAPI backend (required for REST calls).
-      // If this fails, roll back the Firebase account so the user can retry
-      // without hitting "email already in use".
+      // Also register in FastAPI backend (best-effort, non-blocking).
       try {
         await _api.register(
           fullName: fullName.trim(),
           email: email.trim(),
           password: password,
         );
-      } catch (e) {
-        // Best-effort cleanup of the Firebase account
-        try {
-          await cred.user?.delete();
-        } catch (_) {}
-        // Re-throw with the real error so it's debuggable
-        if (e is ApiException) {
-          throw AuthException('Backend registration failed: ${e.message}');
-        }
-        throw AuthException('Backend unreachable: $e');
+      } catch (_) {
+        // Backend unavailable — Firebase account was created successfully
       }
 
       return cred;
