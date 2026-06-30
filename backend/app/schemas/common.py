@@ -1,6 +1,6 @@
 """Pydantic schemas shared across modules."""
 from datetime import datetime
-from typing import Generic, List, Optional, TypeVar
+from typing import Generic, List, TypeVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -9,7 +9,6 @@ T = TypeVar("T")
 
 class ORMBase(BaseModel):
     """Base for ORM-derived response models."""
-
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
 
 
@@ -23,7 +22,6 @@ class MessageResponse(BaseModel):
 
 class PaginatedResponse(BaseModel, Generic[T]):
     """Generic paginated wrapper."""
-
     items: List[T]
     total: int
     page: int
@@ -33,7 +31,5 @@ class PaginatedResponse(BaseModel, Generic[T]):
 class HealthResponse(BaseModel):
     status: str
     environment: str
-    mysql: bool
     mssql: bool
-    firebase: bool
     timestamp: datetime

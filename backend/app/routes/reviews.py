@@ -1,4 +1,4 @@
-"""Review routes (MySQL)."""
+"""Review routes (MSSQL — migrated from MySQL)."""
 from __future__ import annotations
 
 from typing import List
@@ -7,29 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.core.security import FirebaseUser, get_current_user
-from app.db.mysql import get_mysql_db
-from app.models.mysql.restaurant import Restaurant
-from app.models.mysql.review import Review
-from app.models.mysql.user import User
-from app.schemas.mysql import (
-    ReviewCreate,
-    ReviewOut,
-    ReviewUpdate,
-)
-from app.services.user_service import get_user_by_firebase_uid
+from app.core.security import get_current_user
+from app.db.mssql import get_mssql_db
+from app.models.mssql.restaurant import Restaurant
+from app.models.mssql.review import Review
+from app.models.mssql.user import User
+from app.schemas.mysql import ReviewCreate, ReviewOut, ReviewUpdate
 
 router = APIRouter(prefix="/reviews", tags=["Reviews"])
-
-
-def _require_user(db: Session, firebase_user: FirebaseUser) -> User:
-    user = get_user_by_firebase_uid(db, firebase_user.uid)
-    if not user:
-        raise HTTPException(
-            status_code=400,
-            detail="User not synced. Call /auth/sync-user first.",
-        )
-    return user
 
 
 @router.get("/restaurant/{restaurant_id}", response_model=List[ReviewOut])
@@ -37,7 +22,7 @@ def list_restaurant_reviews(
     restaurant_id: int,
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    db: Session = Depends(get_mysql_db),
+    db: Session = Depends(get_mssql_db),
 ) -> List[ReviewOut]:
     items = (
         db.query(Review)
@@ -51,7 +36,7 @@ def list_restaurant_reviews(
 
 
 @router.get("/restaurant/{restaurant_id}/rating")
-def restaurant_rating(restaurant_id: int, db: Session = Depends(get_mysql_db)) -> dict:
+def restaurant_rating(restaurant_id: int, db: Session = Depends(get_mssql_db)) -> dict:
     avg, count = (
         db.query(func.avg(Review.rating), func.count(Review.id))
         .filter(Review.restaurant_id == restaurant_id)
@@ -64,21 +49,16 @@ def restaurant_rating(restaurant_id: int, db: Session = Depends(get_mysql_db)) -
     }
 
 
-@router.post(
-    "",
-    response_model=ReviewOut,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("", response_model=ReviewOut, status_code=status.HTTP_201_CREATED)
 def create_review(
     payload: ReviewCreate,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    db: Session = Depends(get_mysql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> ReviewOut:
-    user = _require_user(db, firebase_user)
     if not db.query(Restaurant).filter(Restaurant.id == payload.restaurant_id).first():
         raise HTTPException(status_code=404, detail="Restaurant not found")
     review = Review(
-        user_id=user.id,
+        user_id=current_user.id,
         restaurant_id=payload.restaurant_id,
         rating=payload.rating,
         comment=payload.comment,
@@ -104,13 +84,12 @@ def create_review(
 def update_review(
     review_id: int,
     payload: ReviewUpdate,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    db: Session = Depends(get_mysql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> ReviewOut:
-    user = _require_user(db, firebase_user)
     review = (
         db.query(Review)
-        .filter(Review.id == review_id, Review.user_id == user.id)
+        .filter(Review.id == review_id, Review.user_id == current_user.id)
         .one_or_none()
     )
     if not review:
@@ -125,13 +104,12 @@ def update_review(
 @router.delete("/{review_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_review(
     review_id: int,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    db: Session = Depends(get_mysql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> Response:
-    user = _require_user(db, firebase_user)
     review = (
         db.query(Review)
-        .filter(Review.id == review_id, Review.user_id == user.id)
+        .filter(Review.id == review_id, Review.user_id == current_user.id)
         .one_or_none()
     )
     if not review:

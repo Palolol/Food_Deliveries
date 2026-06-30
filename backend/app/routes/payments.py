@@ -1,16 +1,17 @@
-"""Payment routes (MSSQL)."""
+"""Payment routes (MSSQL — JWT auth, user_id replaces firebase_uid)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
-from app.core.security import FirebaseUser, get_current_user
+from app.core.security import get_current_user
 from app.db.mssql import get_mssql_db
 from app.models.mssql.order import Order
 from app.models.mssql.payment import Payment, PaymentStatus
+from app.models.mssql.user import User, UserRole
 from app.schemas.mssql import PaymentCreate, PaymentOut, PaymentUpdate
 from app.utils.helpers import generate_transaction_id
 
@@ -25,25 +26,22 @@ router = APIRouter(prefix="/payments", tags=["Payments"])
 )
 def create_payment(
     payload: PaymentCreate,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    mssql_db: Session = Depends(get_mssql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> PaymentOut:
-    order = mssql_db.query(Order).filter(Order.id == payload.order_id).one_or_none()
+    order = db.query(Order).filter(Order.id == payload.order_id).one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if order.firebase_uid != firebase_user.uid:
+    if order.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Not allowed to pay for this order")
-
-    # The amount paid must match the order total (with a small tolerance for FP)
     if abs(payload.amount - order.total) > 0.01:
         raise HTTPException(
             status_code=400,
             detail=f"Payment amount {payload.amount} does not match order total {order.total}",
         )
-
     payment = Payment(
         order_id=order.id,
-        firebase_uid=firebase_user.uid,
+        user_id=current_user.id,
         amount=payload.amount,
         currency=payload.currency,
         method=payload.method,
@@ -52,9 +50,9 @@ def create_payment(
         gateway=payload.gateway,
         gateway_response=payload.gateway_response,
     )
-    mssql_db.add(payment)
-    mssql_db.commit()
-    mssql_db.refresh(payment)
+    db.add(payment)
+    db.commit()
+    db.refresh(payment)
     return PaymentOut.model_validate(payment)
 
 
@@ -67,10 +65,10 @@ def list_my_payments(
     status_filter: Optional[PaymentStatus] = Query(default=None, alias="status"),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=200),
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    mssql_db: Session = Depends(get_mssql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> List[PaymentOut]:
-    q = mssql_db.query(Payment).filter(Payment.firebase_uid == firebase_user.uid)
+    q = db.query(Payment).filter(Payment.user_id == current_user.id)
     if status_filter:
         q = q.filter(Payment.status == status_filter)
     items = (
@@ -85,20 +83,20 @@ def list_my_payments(
 @router.get(
     "/order/{order_id}",
     response_model=List[PaymentOut],
-    summary="All payments for a specific order (owner-only)",
+    summary="All payments for a specific order (owner or admin)",
 )
 def list_order_payments(
     order_id: int,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    mssql_db: Session = Depends(get_mssql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> List[PaymentOut]:
-    order = mssql_db.query(Order).filter(Order.id == order_id).one_or_none()
+    order = db.query(Order).filter(Order.id == order_id).one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    if order.firebase_uid != firebase_user.uid:
+    if order.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not allowed")
     items = (
-        mssql_db.query(Payment)
+        db.query(Payment)
         .filter(Payment.order_id == order_id)
         .order_by(Payment.created_at.desc())
         .all()
@@ -106,19 +104,16 @@ def list_order_payments(
     return [PaymentOut.model_validate(p) for p in items]
 
 
-@router.get(
-    "/{payment_id}",
-    response_model=PaymentOut,
-)
+@router.get("/{payment_id}", response_model=PaymentOut)
 def get_payment(
     payment_id: int,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    mssql_db: Session = Depends(get_mssql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> PaymentOut:
-    p = mssql_db.query(Payment).filter(Payment.id == payment_id).one_or_none()
+    p = db.query(Payment).filter(Payment.id == payment_id).one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")
-    if p.firebase_uid != firebase_user.uid:
+    if p.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not allowed")
     return PaymentOut.model_validate(p)
 
@@ -126,18 +121,18 @@ def get_payment(
 @router.patch(
     "/{payment_id}",
     response_model=PaymentOut,
-    summary="Update a payment (e.g. mark as PAID / REFUNDED / FAILED)",
+    summary="Update a payment (mark as PAID / REFUNDED / FAILED)",
 )
 def update_payment(
     payment_id: int,
     payload: PaymentUpdate,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    mssql_db: Session = Depends(get_mssql_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_mssql_db),
 ) -> PaymentOut:
-    p = mssql_db.query(Payment).filter(Payment.id == payment_id).one_or_none()
+    p = db.query(Payment).filter(Payment.id == payment_id).one_or_none()
     if not p:
         raise HTTPException(status_code=404, detail="Payment not found")
-    if p.firebase_uid != firebase_user.uid:
+    if p.user_id != current_user.id and current_user.role != UserRole.ADMIN:
         raise HTTPException(status_code=403, detail="Not allowed")
 
     p.status = payload.status
@@ -148,12 +143,12 @@ def update_payment(
     if payload.gateway_response is not None:
         p.gateway_response = payload.gateway_response
 
-    # Maintain timestamp invariants
+    now = datetime.now(timezone.utc)
     if payload.status == PaymentStatus.PAID and p.paid_at is None:
-        p.paid_at = datetime.utcnow()
+        p.paid_at = now
     if payload.status == PaymentStatus.REFUNDED and p.refunded_at is None:
-        p.refunded_at = datetime.utcnow()
+        p.refunded_at = now
 
-    mssql_db.commit()
-    mssql_db.refresh(p)
+    db.commit()
+    db.refresh(p)
     return PaymentOut.model_validate(p)

@@ -1,31 +1,34 @@
-"""Payment model (MSSQL)."""
+"""Payment model (MSSQL).
+
+firebase_uid replaced with user_id FK to the unified users table.
+"""
 from __future__ import annotations
 
 import enum
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, String, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.mssql import MSSQLBase
 
 
 class PaymentMethod(str, enum.Enum):
-    CASH = "cash"
-    CREDIT_CARD = "credit_card"
-    DEBIT_CARD = "debit_card"
+    CASH          = "cash"
+    CREDIT_CARD   = "credit_card"
+    DEBIT_CARD    = "debit_card"
     MOBILE_WALLET = "mobile_wallet"
-    ONLINE = "online"
+    ONLINE        = "online"
 
 
 class PaymentStatus(str, enum.Enum):
-    PENDING = "pending"
+    PENDING    = "pending"
     AUTHORIZED = "authorized"
-    PAID = "paid"
-    FAILED = "failed"
-    REFUNDED = "refunded"
-    CANCELLED = "cancelled"
+    PAID       = "paid"
+    FAILED     = "failed"
+    REFUNDED   = "refunded"
+    CANCELLED  = "cancelled"
 
 
 class Payment(MSSQLBase):
@@ -39,10 +42,9 @@ class Payment(MSSQLBase):
         index=True,
     )
 
-    # Store Firebase UID directly — financial records must survive a
-    # potential rebuild of the application database.
-    firebase_uid: Mapped[str] = mapped_column(
-        String(128), nullable=False, index=True
+    # FK to users table (replaces firebase_uid)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     amount: Mapped[float] = mapped_column(Float, nullable=False)
@@ -62,9 +64,8 @@ class Payment(MSSQLBase):
     transaction_id: Mapped[Optional[str]] = mapped_column(
         String(128), unique=True, index=True
     )
-    gateway: Mapped[Optional[str]] = mapped_column(String(50))  # stripe, paypal, etc.
+    gateway: Mapped[Optional[str]] = mapped_column(String(50))
     gateway_response: Mapped[Optional[str]] = mapped_column(String(2000))
-
     failure_reason: Mapped[Optional[str]] = mapped_column(String(500))
 
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime)

@@ -1,8 +1,11 @@
-"""Schemas for the MySQL module (users, restaurants, menus, reviews, addresses)."""
+"""MySQL schemas removed — re-exported from mssql schema for compatibility."""
+from app.schemas.mssql import *  # noqa: F401, F403
+
+# Keep explicit imports for routes that use these directly
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from app.schemas.common import ORMBase
 

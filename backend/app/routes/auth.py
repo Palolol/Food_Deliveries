@@ -1,82 +1,139 @@
-"""Auth routes: verify Firebase token + sync user to MySQL.
+"""Auth routes — native JWT authentication (Firebase removed).
 
-NOTE: This backend does NOT implement login or register.
-Flutter handles authentication directly via Firebase Auth and sends the
-resulting ID token in the Authorization: Bearer header.
+Endpoints:
+  POST /auth/register   — self-registration (customer by default)
+  POST /auth/login      — email+password → JWT
+  GET  /auth/me         — current user info
+  GET  /auth/users      — list all users (admin only)
+  PATCH /auth/users/{id}/role — update user role (admin only)
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.security import FirebaseUser, get_current_user
-from app.db.mysql import get_mysql_db
-from app.schemas.auth import AuthMeOut, SyncUserIn, UserOut
-from app.services.user_service import get_or_create_user, get_user_by_firebase_uid
+from app.core.security import get_current_user, require_admin
+from app.db.mssql import get_mssql_db
+from app.models.mssql.user import User, UserRole
+from app.schemas.auth import (
+    LoginIn,
+    RegisterIn,
+    RegisterOut,
+    RoleUpdate,
+    TokenOut,
+    UserOut,
+)
+from app.services.user_service import (
+    authenticate_user,
+    create_access_token,
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
-@router.get(
-    "/me",
-    response_model=AuthMeOut,
-    summary="Get the current authenticated user",
-)
-def get_me(
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    db: Session = Depends(get_mysql_db),
-) -> AuthMeOut:
-    """
-    Returns the Firebase identity and the local DB user record.
-    The DB record may be None if the user has never called /auth/sync-user.
-    """
-    user = get_user_by_firebase_uid(db, firebase_user.uid)
-    return AuthMeOut(
-        firebase_uid=firebase_user.uid,
-        email=firebase_user.email,
-        email_verified=firebase_user.is_email_verified,
-        user=UserOut.model_validate(user) if user else None,
-    )
-
+# ── Register ──────────────────────────────────────────────────────────────────
 
 @router.post(
-    "/sync-user",
-    response_model=UserOut,
+    "/register",
+    response_model=RegisterOut,
     status_code=status.HTTP_201_CREATED,
-    summary="Create or update the local user record for a Firebase user",
+    summary="Create a new account (customer by default)",
 )
-def sync_user(
-    payload: SyncUserIn,
-    firebase_user: FirebaseUser = Depends(get_current_user),
-    db: Session = Depends(get_mysql_db),
-) -> UserOut:
-    """
-    Idempotent: creates the local User row on first call, updates it on
-    subsequent calls. Email is taken from the verified token, not the body.
-    """
-    user = get_or_create_user(
+def register(
+    payload: RegisterIn,
+    db: Session = Depends(get_mssql_db),
+) -> RegisterOut:
+    if get_user_by_email(db, payload.email):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists.",
+        )
+    user = create_user(
         db,
-        firebase_uid=firebase_user.uid,
-        email=firebase_user.email,
         full_name=payload.full_name,
+        email=payload.email,
+        password=payload.password,
         phone=payload.phone,
-        avatar_url=payload.avatar_url,
+        role=UserRole.CUSTOMER,  # always customer on self-registration
+    )
+    return RegisterOut.model_validate(user)
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/login",
+    response_model=TokenOut,
+    summary="Login and receive a JWT access token",
+)
+def login(
+    payload: LoginIn,
+    db: Session = Depends(get_mssql_db),
+) -> TokenOut:
+    user = authenticate_user(db, payload.email, payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token = create_access_token(user)
+    return TokenOut(
+        access_token=token,
+        token_type="bearer",
+        user_id=user.id,
+        full_name=user.full_name,
+        email=user.email,
+        role=user.role,
     )
 
-    # Update mutable fields if provided
-    updated = False
-    if payload.full_name is not None and payload.full_name != user.full_name:
-        user.full_name = payload.full_name
-        updated = True
-    if payload.phone is not None and payload.phone != user.phone:
-        user.phone = payload.phone
-        updated = True
-    if payload.avatar_url is not None and payload.avatar_url != user.avatar_url:
-        user.avatar_url = payload.avatar_url
-        updated = True
 
-    if updated:
-        db.commit()
-        db.refresh(user)
+# ── Current user ──────────────────────────────────────────────────────────────
 
+@router.get(
+    "/me",
+    response_model=UserOut,
+    summary="Get the current authenticated user",
+)
+def get_me(current_user: User = Depends(get_current_user)) -> UserOut:
+    return UserOut.model_validate(current_user)
+
+
+# ── Admin: user management ────────────────────────────────────────────────────
+
+@router.get(
+    "/users",
+    response_model=List[UserOut],
+    summary="List all users (admin only)",
+)
+def list_users(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_mssql_db),
+) -> List[UserOut]:
+    users = db.query(User).order_by(User.id).all()
+    return [UserOut.model_validate(u) for u in users]
+
+
+@router.patch(
+    "/users/{user_id}/role",
+    response_model=UserOut,
+    summary="Update a user's role (admin only)",
+)
+def update_user_role(
+    user_id: int,
+    payload: RoleUpdate,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_mssql_db),
+) -> UserOut:
+    user = get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.role = payload.role
+    db.commit()
+    db.refresh(user)
     return UserOut.model_validate(user)

@@ -1,4 +1,8 @@
-"""MSSQL database connection (financial data: orders, payments)."""
+"""MSSQL database connection — unified store for ALL application data.
+
+All models (users, restaurants, menus, reviews, addresses, orders, payments)
+now live in a single MSSQL database. MySQL has been removed.
+"""
 from __future__ import annotations
 
 import logging
@@ -12,8 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class MSSQLBase(DeclarativeBase):
-    """Base class for MSSQL ORM models."""
-
+    """Shared base class for ALL ORM models (previously split between MySQL/MSSQL)."""
     pass
 
 
@@ -25,7 +28,7 @@ mssql_engine = create_engine(
     max_overflow=20,
     future=True,
     echo=False,
-    # MSSQL pyodbc specific: faster executemany
+    # pyodbc-specific: faster bulk inserts
     fast_executemany=True,
 )
 

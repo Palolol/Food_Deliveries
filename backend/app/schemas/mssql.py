@@ -1,8 +1,8 @@
-"""Schemas for the MSSQL module (orders, payments)."""
+"""Schemas for orders and payments (MSSQL)."""
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.models.mssql.order import OrderStatus
 from app.models.mssql.payment import PaymentMethod, PaymentStatus
@@ -42,9 +42,9 @@ class OrderItemOut(ORMBase):
 
 class OrderOut(ORMBase):
     id: int
-    firebase_uid: str
+    user_id: int
     user_email: Optional[str] = None
-    restaurant_id: int
+    restaurant_id: Optional[int] = None
     restaurant_name: Optional[str] = None
     delivery_address: str
     delivery_city: Optional[str] = None
@@ -88,7 +88,7 @@ class PaymentUpdate(BaseModel):
 class PaymentOut(ORMBase):
     id: int
     order_id: int
-    firebase_uid: str
+    user_id: int
     amount: float
     currency: str
     method: PaymentMethod

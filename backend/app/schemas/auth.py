@@ -1,37 +1,68 @@
-"""Auth-related Pydantic schemas."""
+"""Auth-related Pydantic schemas — native JWT auth (Firebase removed)."""
 from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
+from app.models.mssql.user import UserRole
 from app.schemas.common import ORMBase
 
 
-class SyncUserIn(BaseModel):
-    """Payload for /auth/sync-user — comes from the Flutter client after login."""
+# ── Register ──────────────────────────────────────────────────────────────────
 
-    full_name: Optional[str] = Field(default=None, max_length=255)
+class RegisterIn(BaseModel):
+    """Payload for POST /auth/register."""
+    full_name: str = Field(..., min_length=1, max_length=255)
+    email: EmailStr
+    password: str = Field(..., min_length=6, max_length=128)
     phone: Optional[str] = Field(default=None, max_length=32)
-    avatar_url: Optional[str] = Field(default=None, max_length=512)
+    # Only allow customer self-registration; admin assigns higher roles
+    role: UserRole = UserRole.CUSTOMER
 
+
+class RegisterOut(ORMBase):
+    id: int
+    email: str
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+
+
+# ── Login ─────────────────────────────────────────────────────────────────────
+
+class LoginIn(BaseModel):
+    """Payload for POST /auth/login."""
+    email: EmailStr
+    password: str = Field(..., min_length=1)
+
+
+class TokenOut(BaseModel):
+    """Returned on successful login."""
+    access_token: str
+    token_type: str = "bearer"
+    user_id: int
+    full_name: Optional[str] = None
+    email: str
+    role: UserRole
+
+
+# ── Current user ─────────────────────────────────────────────────────────────
 
 class UserOut(ORMBase):
     id: int
-    firebase_uid: str
-    email: Optional[str] = None
+    email: str
     full_name: Optional[str] = None
     phone: Optional[str] = None
     avatar_url: Optional[str] = None
+    role: UserRole
     is_active: bool
-    is_admin: bool
     created_at: datetime
     updated_at: datetime
 
 
-class AuthMeOut(BaseModel):
-    """Combined response: Firebase identity + DB record (if any)."""
+# ── Admin: update role ────────────────────────────────────────────────────────
 
-    firebase_uid: str
-    email: Optional[str] = None
-    email_verified: bool = False
-    user: Optional[UserOut] = None
+class RoleUpdate(BaseModel):
+    role: UserRole

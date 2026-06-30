@@ -282,14 +282,14 @@ class _SignupScreenState extends State<SignupScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Firebase badge ──────────────────────────────────────────────
+            // ── JWT security badge ──────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.security, size: 14, color: Colors.grey.shade400),
+                Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
                 const SizedBox(width: 6),
                 Text(
-                  'Secured by Firebase Authentication',
+                  'Secured with JWT Authentication',
                   style: GoogleFonts.poppins(
                     fontSize: 11,
                     color: Colors.grey.shade400,

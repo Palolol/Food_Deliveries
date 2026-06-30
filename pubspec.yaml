@@ -1,5 +1,5 @@
 name: food_delivery
-description: "A food delivery app with Firebase Auth."
+description: "A food delivery app with MSSQL backend and JWT authentication."
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -11,10 +11,6 @@ dependencies:
     sdk: flutter
 
   cupertino_icons: ^1.0.8
-
-  # Firebase Auth (locked versions compatible with Flutter 3.35.4 / Dart 3.9.2)
-  firebase_core: 3.6.0
-  firebase_auth: 5.3.1
 
   # State management
   provider: 6.1.5+1

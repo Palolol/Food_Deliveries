@@ -1,14 +1,11 @@
-"""Order-creation business logic.
+"""Order-creation business logic (MSSQL only — MySQL removed).
 
-Spans MySQL (menu lookup) and MSSQL (orders + payments).
-This is the canonical end-to-end flow described in the project spec:
-
-    1. Verify Firebase token (done by the dependency in the route)
-    2. Get Firebase UID
-    3. Fetch menu from MySQL
-    4. Create order in MSSQL
-    5. Create payment record in MSSQL
-    6. Return response to Flutter
+Flow:
+    1. JWT token verified by the dependency in the route
+    2. Verify restaurant exists (MSSQL)
+    3. Resolve menu items (MSSQL)
+    4. Create order + payment atomically (MSSQL)
+    5. Return response to Flutter
 """
 from __future__ import annotations
 
@@ -17,10 +14,11 @@ from typing import List
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 
+from app.models.mssql.menu import MenuItem
 from app.models.mssql.order import Order, OrderItem, OrderStatus
 from app.models.mssql.payment import Payment, PaymentMethod, PaymentStatus
-from app.models.mysql.menu import MenuItem
-from app.models.mysql.restaurant import Restaurant
+from app.models.mssql.restaurant import Restaurant
+from app.models.mssql.user import User
 from app.schemas.mssql import OrderCreate
 from app.utils.helpers import generate_transaction_id
 
@@ -36,21 +34,17 @@ def _calculate_totals(
 
 def create_order_with_payment(
     *,
-    mssql_db: Session,
-    mysql_db: Session,
-    firebase_uid: str,
-    user_email: str | None,
+    db: Session,
+    current_user: User,
     payload: OrderCreate,
 ) -> tuple[Order, Payment]:
     """
-    Create an order and its initial payment record.
-
-    The MSSQL transaction is committed atomically: if anything fails,
-    the order AND payment are rolled back together.
+    Create an order and its initial payment record atomically in MSSQL.
+    Raises HTTPException on any validation failure.
     """
-    # ---- 1. Verify restaurant exists (MySQL) ----
+    # ---- 1. Verify restaurant exists ----
     restaurant: Restaurant | None = (
-        mysql_db.query(Restaurant)
+        db.query(Restaurant)
         .filter(Restaurant.id == payload.restaurant_id)
         .one_or_none()
     )
@@ -65,10 +59,10 @@ def create_order_with_payment(
             detail="Restaurant is currently closed",
         )
 
-    # ---- 2. Resolve and price each menu item (MySQL) ----
+    # ---- 2. Resolve and price each menu item ----
     menu_ids = [i.menu_item_id for i in payload.items]
     menu_items: list[MenuItem] = (
-        mysql_db.query(MenuItem).filter(MenuItem.id.in_(menu_ids)).all()
+        db.query(MenuItem).filter(MenuItem.id.in_(menu_ids)).all()
     )
     menu_by_id = {m.id: m for m in menu_items}
 
@@ -108,10 +102,10 @@ def create_order_with_payment(
             )
         )
 
-    # ---- 3. Create the order (MSSQL) ----
+    # ---- 3. Create the order ----
     order = Order(
-        firebase_uid=firebase_uid,
-        user_email=user_email,
+        user_id=current_user.id,
+        user_email=current_user.email,
         restaurant_id=restaurant.id,
         restaurant_name=restaurant.name,
         delivery_address=payload.delivery_address,
@@ -135,7 +129,7 @@ def create_order_with_payment(
     order.tax = tax
     order.total = total
 
-    # ---- 4. Initial payment record (MSSQL) ----
+    # ---- 4. Initial payment record ----
     initial_payment_status = (
         PaymentStatus.PAID
         if payload.payment_method == PaymentMethod.CASH
@@ -143,7 +137,7 @@ def create_order_with_payment(
     )
     payment = Payment(
         order=order,
-        firebase_uid=firebase_uid,
+        user_id=current_user.id,
         amount=total,
         currency="USD",
         method=payload.payment_method,
@@ -152,16 +146,16 @@ def create_order_with_payment(
     )
 
     try:
-        mssql_db.add(order)
-        mssql_db.add(payment)
-        mssql_db.commit()
+        db.add(order)
+        db.add(payment)
+        db.commit()
     except Exception as exc:  # noqa: BLE001
-        mssql_db.rollback()
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create order: {exc}",
         ) from exc
 
-    mssql_db.refresh(order)
-    mssql_db.refresh(payment)
+    db.refresh(order)
+    db.refresh(payment)
     return order, payment

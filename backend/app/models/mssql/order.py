@@ -1,4 +1,7 @@
-"""Order and OrderItem models (MSSQL)."""
+"""Order and OrderItem models (MSSQL).
+
+firebase_uid replaced with user_id FK to the unified users table.
+"""
 from __future__ import annotations
 
 import enum
@@ -22,14 +25,13 @@ from app.db.mssql import MSSQLBase
 
 class OrderStatus(str, enum.Enum):
     """Lifecycle states for an order."""
-
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    PREPARING = "preparing"
+    PENDING          = "pending"
+    CONFIRMED        = "confirmed"
+    PREPARING        = "preparing"
     OUT_FOR_DELIVERY = "out_for_delivery"
-    DELIVERED = "delivered"
-    CANCELLED = "cancelled"
-    REFUNDED = "refunded"
+    DELIVERED        = "delivered"
+    CANCELLED        = "cancelled"
+    REFUNDED         = "refunded"
 
 
 class Order(MSSQLBase):
@@ -37,14 +39,17 @@ class Order(MSSQLBase):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
-    # Orders belong to a Firebase-authenticated user. We store the UID directly
-    # (not a FK to MySQL users) so financial data stays in this DB independently.
-    firebase_uid: Mapped[str] = mapped_column(
-        String(128), nullable=False, index=True
+    # FK to users table (replaces firebase_uid)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
     user_email: Mapped[Optional[str]] = mapped_column(String(255))
 
-    restaurant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    restaurant_id: Mapped[int] = mapped_column(
+        ForeignKey("restaurants.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     restaurant_name: Mapped[Optional[str]] = mapped_column(String(255))
 
     # Snapshot of the delivery address at order time
@@ -80,6 +85,7 @@ class Order(MSSQLBase):
     )
 
     # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="orders")  # noqa: F821
     items: Mapped[list["OrderItem"]] = relationship(  # noqa: F821
         "OrderItem",
         back_populates="order",

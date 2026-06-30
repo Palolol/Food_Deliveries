@@ -1,141 +1,56 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// auth_service.dart  –  Firebase Auth (email / password) wrapper
+// auth_service.dart  –  Pure API-based authentication (Firebase removed)
 //
-// Handles:
-//   • Sign-up    (createUserWithEmailAndPassword + displayName update)
-//   • Sign-in    (signInWithEmailAndPassword)
-//   • Sign-out
-//   • Password reset email (sendPasswordResetEmail)
-//   • Auth-state stream (used by AppState provider)
-//   • Sync with ApiService for JWT-based REST calls (optional dual-auth)
+// All auth calls go to the FastAPI backend which issues JWT tokens.
+// Passwords are hashed server-side with bcrypt.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'api_service.dart';
 
-/// Translates Firebase [FirebaseAuthException] codes into readable messages.
-String _friendlyMessage(FirebaseAuthException e) {
-  switch (e.code) {
-    case 'user-not-found':
-      return 'No account found for that email address.';
-    case 'wrong-password':
-      return 'Incorrect password. Please try again.';
-    case 'invalid-credential':
-      return 'Invalid email or password. Please check and try again.';
-    case 'email-already-in-use':
-      return 'An account with this email already exists.';
-    case 'invalid-email':
-      return 'Please enter a valid email address.';
-    case 'weak-password':
-      return 'Password must be at least 6 characters.';
-    case 'too-many-requests':
-      return 'Too many failed attempts. Please try again later.';
-    case 'network-request-failed':
-      return 'Network error. Please check your connection.';
-    case 'user-disabled':
-      return 'This account has been disabled.';
-    default:
-      return e.message ?? 'Authentication failed. Please try again.';
-  }
-}
-
 class AuthService {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final _api = ApiService.instance;
 
   // ── Current user ───────────────────────────────────────────────────────────
-  User? get currentUser => _auth.currentUser;
-  // Firebase is the source of truth — API JWT is optional/supplementary
-  bool get isLoggedIn => _auth.currentUser != null;
-
-  String? get userName => _auth.currentUser?.displayName ?? _api.userName;
-  String? get userEmail => _auth.currentUser?.email ?? _api.userEmail;
-
-  /// Stream of Firebase auth-state changes (null = signed out).
-  Stream<User?> get authStateChanges => _auth.authStateChanges();
+  bool    get isLoggedIn => _api.isLoggedIn;
+  String? get userName   => _api.userName;
+  String? get userEmail  => _api.userEmail;
+  String? get userRole   => _api.userRole;
 
   // ── Sign In ────────────────────────────────────────────────────────────────
-  Future<UserCredential> signIn({
+  Future<void> signIn({
     required String email,
     required String password,
   }) async {
     try {
-      final cred = await _auth.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
-
-      // Also log in to FastAPI backend for JWT (best-effort, non-blocking)
-      try {
-        await _api.login(email: email.trim(), password: password);
-      } catch (_) {
-        // Backend unavailable — Firebase auth still valid
-      }
-
-      return cred;
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyMessage(e));
-    } on AuthException {
-      rethrow;
+      await _api.login(email: email.trim(), password: password);
+    } on ApiException catch (e) {
+      throw AuthException(e.message);
     } catch (e) {
       throw AuthException('Sign-in failed: $e');
     }
   }
 
   // ── Sign Up ────────────────────────────────────────────────────────────────
-  Future<UserCredential> signUp({
+  Future<void> signUp({
     required String fullName,
     required String email,
     required String password,
   }) async {
-    UserCredential? cred;
     try {
-      cred = await _auth.createUserWithEmailAndPassword(
+      await _api.register(
+        fullName: fullName.trim(),
         email: email.trim(),
         password: password,
       );
-
-      // Store display name in Firebase profile
-      await cred.user?.updateDisplayName(fullName.trim());
-      await cred.user?.reload();
-
-      // Also register in FastAPI backend (best-effort, non-blocking).
-      try {
-        await _api.register(
-          fullName: fullName.trim(),
-          email: email.trim(),
-          password: password,
-        );
-      } catch (_) {
-        // Backend unavailable — Firebase account was created successfully
-      }
-
-      return cred;
-    } on FirebaseAuthException catch (e) {
-      // Roll back if Firebase created the user but a follow-up step failed
-      try {
-        await cred?.user?.delete();
-      } catch (_) {}
-      throw AuthException(_friendlyMessage(e));
-    } on AuthException {
-      rethrow;
+    } on ApiException catch (e) {
+      throw AuthException(e.message);
     } catch (e) {
       throw AuthException('Sign-up failed: $e');
     }
   }
 
-  // ── Password Reset ─────────────────────────────────────────────────────────
-  Future<void> resetPassword(String email) async {
-    try {
-      await _auth.sendPasswordResetEmail(email: email.trim());
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_friendlyMessage(e));
-    }
-  }
-
   // ── Sign Out ───────────────────────────────────────────────────────────────
   Future<void> signOut() async {
-    await _auth.signOut();
     await _api.logout();
   }
 }

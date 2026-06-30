@@ -59,32 +59,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _handleForgotPassword() async {
-    final email = _emailController.text.trim();
-    if (email.isEmpty) {
-      _showError('Enter your email address above first.');
-      return;
-    }
-
-    final emailReg = RegExp(r'^[\w\-\.]+@([\w\-]+\.)+[\w\-]{2,4}$');
-    if (!emailReg.hasMatch(email)) {
-      _showError('Please enter a valid email address first.');
-      return;
-    }
-
-    setState(() => _isLoading = true);
-    try {
-      await _authService.resetPassword(email);
-      if (mounted) {
-        _showSuccess('Password reset email sent to $email.\nCheck your inbox.');
-      }
-    } on AuthException catch (e) {
-      if (mounted) _showError(e.message);
-    } catch (e) {
-      if (mounted) _showError('Could not send reset email. Please try again.');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  void _handleForgotPassword() {
+    // Password reset is handled server-side — contact your administrator.
+    _showError('Password reset is not available. Please contact support.');
   }
 
   void _showError(String msg) {
@@ -95,18 +72,6 @@ class _LoginScreenState extends State<LoginScreen> {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         duration: const Duration(seconds: 4),
-      ),
-    );
-  }
-
-  void _showSuccess(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: GoogleFonts.poppins(fontSize: 13)),
-        backgroundColor: AppColors.success,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        duration: const Duration(seconds: 5),
       ),
     );
   }
@@ -284,14 +249,14 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
             const SizedBox(height: 28),
 
-            // ── Firebase badge ──────────────────────────────────────────────
+            // ── JWT security badge ──────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.security, size: 14, color: Colors.grey.shade400),
+                Icon(Icons.lock_outline, size: 14, color: Colors.grey.shade400),
                 const SizedBox(width: 6),
                 Text(
-                  'Secured by Firebase Authentication',
+                  'Secured with JWT Authentication',
                   style: GoogleFonts.poppins(
                     fontSize: 11,
                     color: Colors.grey.shade400,
