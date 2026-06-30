@@ -1,20 +1,24 @@
 # Render Blueprint — https://render.com/docs/blueprint-spec
-# Drop this in `backend/render.yaml` (or repo root) and click "New +" → "Blueprint"
-# in the Render dashboard to spin up the service from this file.
-
+# 1. Click "New +" → "Blueprint" in the Render dashboard
+# 2. Connect your repo
+# 3. Set "Root Directory" if asked: backend
+# 4. Render reads this file and creates the service
+#
+# NOTE: This file contains ONLY non-secret env vars. Add these in the
+# Render dashboard after the first deploy (or via "Secret Files"):
+#   - MSSQL_ODBC_CONNECTION_STRING
+#   - SECRET_KEY  (Render can "Generate" this for you)
 services:
   - type: web
     name: food-deliveries-api
     runtime: docker
     rootDir: backend
-    plan: starter          # $7/mo, no sleep. Use "free" for a demo but it sleeps.
-    region: oregon         # closest to most users; change if needed.
+    plan: starter           # $7/mo, no sleep. Use "free" only for a demo (sleeps after 15 min).
+    region: oregon          # closest to most users; change if needed.
     branch: main
     dockerfilePath: ./Dockerfile
     dockerContext: .
     healthCheckPath: /health
-
-    # Optional but recommended for FastAPI behind Render's load balancer.
     autoDeploy: true
 
     envVars:
@@ -28,19 +32,11 @@ services:
         value: "8000"
       - key: API_PREFIX
         value: /api/v1
-
-      # --- DB connection (Azure SQL example) ---
-      # Replace with your real Azure SQL connection string. Use a Secret File
-      # or Render Secret Store in production; this is just a placeholder.
-      - key: MSSQL_ODBC_CONNECTION_STRING
-        sync: false         # <- mark "sensitive" in the Render UI when pasting
-        value: mssql+pyodbc://USER:PASSWORD@yourserver.database.windows.net:1433/food_delivery?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
-
-      # --- JWT ---
-      - key: SECRET_KEY
-        sync: false
-        generateValue: true    # Render will create a strong random value
       - key: ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "60"
+
+      # --- These two are set in the Render dashboard, NOT here ---
+      # MSSQL_ODBC_CONNECTION_STRING  (Azure SQL FQDN, not 127.0.0.1)
+      # SECRET_KEY                    (Render → "Generate Value")
