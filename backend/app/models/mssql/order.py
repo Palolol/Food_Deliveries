@@ -46,7 +46,13 @@ class Order(MSSQLBase):
     user_email: Mapped[Optional[str]] = mapped_column(String(255))
 
     restaurant_id: Mapped[int] = mapped_column(
-        ForeignKey("restaurants.id", ondelete="SET NULL"),
+        # NO ACTION (was SET NULL). Combined with `restaurants.owner_id
+        # ON DELETE CASCADE`, a `DELETE FROM users` would otherwise trigger
+        # two cascading actions on the `orders.restaurant_id` column — SQL
+        # Server rejects that with error 1785.  We keep `restaurant_id`
+        # nullable and rely on application code (or app/clear_db.py's
+        # ordered delete) to set it NULL when a restaurant is removed.
+        ForeignKey("restaurants.id", ondelete="NO ACTION"),
         nullable=True,
         index=True,
     )

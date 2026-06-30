@@ -18,8 +18,14 @@ class Review(MSSQLBase):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # NOTE: NO ondelete CASCADE here.
+    # `users -> restaurants (CASCADE) -> reviews (CASCADE)` would create a
+    # multi-cascade-path cycle that SQL Server forbids (error 1785).
+    # The ORM `cascade="all, delete-orphan"` on Restaurant.reviews handles
+    # deletion when a restaurant is removed through a Session. For raw SQL
+    # or TRUNCATE, delete restaurants first (see app/clear_db.py order).
     restaurant_id: Mapped[int] = mapped_column(
-        ForeignKey("restaurants.id", ondelete="CASCADE"),
+        ForeignKey("restaurants.id", ondelete="NO ACTION"),
         nullable=False,
         index=True,
     )

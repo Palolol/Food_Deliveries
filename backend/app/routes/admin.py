@@ -54,7 +54,12 @@ def _table_counts() -> Dict[str, int]:
 
 
 def _snapshot_admin(admin: User, new_password_hash: Optional[str]) -> Dict:
-    """Capture the fields needed to re-insert this admin row later."""
+    """Capture the fields needed to re-insert this admin row later.
+
+    SQLAlchemy's Enum with ``native_enum=False`` stores the *name* of the
+    enum value (e.g. ``"ADMIN"``), not the lowercase ``.value`` string.
+    We must write it back the same way to keep SQLAlchemy's coercion happy.
+    """
     return {
         "id": admin.id,
         "email": admin.email,
@@ -62,7 +67,7 @@ def _snapshot_admin(admin: User, new_password_hash: Optional[str]) -> Dict:
         "phone": admin.phone,
         "avatar_url": admin.avatar_url,
         "password_hash": new_password_hash or admin.password_hash,
-        "role": admin.role.value if isinstance(admin.role, UserRole) else str(admin.role),
+        "role": admin.role.name if isinstance(admin.role, UserRole) else str(admin.role),
         "is_active": bool(admin.is_active),
     }
 
@@ -104,23 +109,107 @@ def _reinstate_admin(snapshot: Dict) -> User:
 
 
 def _clear_orm() -> None:
-    """Delete from users; CASCADE handles the rest."""
+    """Delete every row in dependency order via SQLAlchemy ORM.
+
+    SQL Server forbids multi-cascade-path cycles, so we removed
+    ``ON DELETE CASCADE`` from the ``branch`` FKs (reviews.restaurant_id,
+    payments.order_id). That means the DB won't auto-clean these tables
+    when their grandparent row is deleted — we must do it in the right
+    order: leaves first, users last.
+    """
+    from app.models.mssql.order import Order, OrderItem
+    from app.models.mssql.payment import Payment
+    from app.models.mssql.review import Review
+    from app.models.mssql.address import Address
+    from app.models.mssql.menu import MenuItem
+    from app.models.mssql.restaurant import Restaurant
+
     with MSSQLSessionLocal() as db:
+        db.query(OrderItem).delete(synchronize_session=False)
+        db.query(Payment).delete(synchronize_session=False)
+        db.query(Order).delete(synchronize_session=False)
+        db.query(Review).delete(synchronize_session=False)
+        db.query(Address).delete(synchronize_session=False)
+        db.query(MenuItem).delete(synchronize_session=False)
+        db.query(Restaurant).delete(synchronize_session=False)
         db.query(User).delete(synchronize_session=False)
         db.commit()
 
 
 def _clear_truncate() -> None:
-    """TRUNCATE every table with FK checks disabled."""
-    with mssql_engine.begin() as conn:
-        conn.execute(text("EXEC sp_MSforeachtable 'ALTER TABLE ? NOCHECK CONSTRAINT ALL'"))
-        try:
-            for table in TABLES_IN_ORDER:
-                conn.execute(text(f"TRUNCATE TABLE {table}"))
-        finally:
-            conn.execute(
-                text("EXEC sp_MSforeachtable 'ALTER TABLE ? WITH CHECK CHECK CONSTRAINT ALL'")
+    """TRUNCATE every table.
+
+    SQL Server's ``NOCHECK CONSTRAINT`` does NOT unblock TRUNCATE — TRUNCATE
+    requires the FKs to be physically absent. We snapshot FK definitions,
+    drop them, truncate, then restore them so the schema is unchanged.
+    """
+    logger.info("Snapshotting FK definitions from sys.foreign_keys...")
+    fk_snapshot: list[dict] = []
+    with mssql_engine.connect() as conn:
+        fk_rows = conn.execute(
+            text(
+                """
+                SELECT fk.name AS fk_name,
+                       OBJECT_NAME(fk.parent_object_id) AS tbl,
+                       OBJECT_NAME(fk.referenced_object_id) AS ref_tbl
+                FROM sys.foreign_keys fk
+                """
             )
+        ).fetchall()
+        for fk_name, tbl, ref_tbl in fk_rows:
+            col_rows = conn.execute(
+                text(
+                    """
+                    SELECT COL_NAME(fkc.parent_object_id, fkc.parent_column_id),
+                           COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id)
+                    FROM sys.foreign_key_columns fkc
+                    WHERE fkc.constraint_object_id = OBJECT_ID(:name)
+                    ORDER BY fkc.constraint_column_id
+                    """
+                ),
+                {"name": fk_name},
+            ).fetchall()
+            action_row = conn.execute(
+                text("SELECT fk.delete_referential_action_desc FROM sys.foreign_keys fk WHERE fk.name = :name"),
+                {"name": fk_name},
+            ).first()
+            on_delete = action_row[0] if action_row else "NO_ACTION"
+            fk_snapshot.append(
+                {
+                    "fk_name": fk_name,
+                    "tbl": tbl,
+                    "ref_tbl": ref_tbl,
+                    "src_cols": [c[0] for c in col_rows],
+                    "ref_cols": [c[1] for c in col_rows],
+                    "on_delete": on_delete,
+                }
+            )
+
+    action_map = {
+        "NO_ACTION": "NO ACTION",
+        "CASCADE": "CASCADE",
+        "SET_NULL": "SET NULL",
+        "SET_DEFAULT": "SET DEFAULT",
+    }
+
+    logger.info("Dropping %d FK constraint(s)...", len(fk_snapshot))
+    with mssql_engine.begin() as conn:
+        for fk in fk_snapshot:
+            conn.execute(text(f"ALTER TABLE [{fk['tbl']}] DROP CONSTRAINT [{fk['fk_name']}]"))
+        for table in TABLES_IN_ORDER:
+            logger.info("TRUNCATE %s", table)
+            conn.execute(text(f"TRUNCATE TABLE {table}"))
+        for fk in fk_snapshot:
+            on_del = action_map.get(fk["on_delete"], "NO ACTION")
+            src = ", ".join(f"[{c}]" for c in fk["src_cols"])
+            ref = ", ".join(f"[{c}]" for c in fk["ref_cols"])
+            ddl = (
+                f"ALTER TABLE [{fk['tbl']}] ADD CONSTRAINT [{fk['fk_name']}] "
+                f"FOREIGN KEY ({src}) REFERENCES [{fk['ref_tbl']}] ({ref}) "
+                f"ON DELETE {on_del}"
+            )
+            logger.info("Restoring FK %s", fk["fk_name"])
+            conn.execute(text(ddl))
 
 
 def _clear_recreate() -> None:

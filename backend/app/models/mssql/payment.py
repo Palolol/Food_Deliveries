@@ -37,7 +37,11 @@ class Payment(MSSQLBase):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
 
     order_id: Mapped[int] = mapped_column(
-        ForeignKey("orders.id", ondelete="CASCADE"),
+        # NO ondelete CASCADE: `users -> orders (CASCADE) -> payments (CASCADE)`
+        # would form a multi-cascade-path cycle that SQL Server forbids (error 1785).
+        # Deletion is handled via the Order.payments relationship cascade or by
+        # the explicit delete order in app/clear_db.py.
+        ForeignKey("orders.id", ondelete="NO ACTION"),
         nullable=False,
         index=True,
     )

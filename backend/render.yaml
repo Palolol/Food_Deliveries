@@ -1,0 +1,46 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Drop this in `backend/render.yaml` (or repo root) and click "New +" → "Blueprint"
+# in the Render dashboard to spin up the service from this file.
+
+services:
+  - type: web
+    name: food-deliveries-api
+    runtime: docker
+    rootDir: backend
+    plan: starter          # $7/mo, no sleep. Use "free" for a demo but it sleeps.
+    region: oregon         # closest to most users; change if needed.
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+
+    # Optional but recommended for FastAPI behind Render's load balancer.
+    autoDeploy: true
+
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_HOST
+        value: 0.0.0.0
+      - key: APP_PORT
+        value: "8000"
+      - key: API_PREFIX
+        value: /api/v1
+
+      # --- DB connection (Azure SQL example) ---
+      # Replace with your real Azure SQL connection string. Use a Secret File
+      # or Render Secret Store in production; this is just a placeholder.
+      - key: MSSQL_ODBC_CONNECTION_STRING
+        sync: false         # <- mark "sensitive" in the Render UI when pasting
+        value: mssql+pyodbc://USER:PASSWORD@yourserver.database.windows.net:1433/food_delivery?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no
+
+      # --- JWT ---
+      - key: SECRET_KEY
+        sync: false
+        generateValue: true    # Render will create a strong random value
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"

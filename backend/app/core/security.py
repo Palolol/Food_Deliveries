@@ -77,7 +77,7 @@ def get_current_user(
             detail="Token missing 'sub' (user id) claim",
         )
 
-    user = db.query(User).filter(User.id == int(user_id), User.is_active.is_(True)).first()
+    user = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
