@@ -1,0 +1,5 @@
+Append to .gitignore:
+backend/.venv/
+backend/.env
+backend/firebase.json
+*.env

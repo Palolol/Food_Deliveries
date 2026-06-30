@@ -25,6 +25,7 @@ from app.routes.reviews import router as review_router
 from app.routes.orders import router as orders_router
 from app.routes.payments import router as payments_router
 from app.routes.restaurants import router as restaurants_router
+from app.routes.admin import router as admin_router
 from app.schemas.common import HealthResponse
 
 logging.basicConfig(
@@ -74,6 +75,7 @@ app.include_router(address_router,     prefix=api_prefix)
 app.include_router(review_router,      prefix=api_prefix)
 app.include_router(orders_router,      prefix=api_prefix)
 app.include_router(payments_router,    prefix=api_prefix)
+app.include_router(admin_router,       prefix=api_prefix)
 
 
 @app.get("/", include_in_schema=False)
